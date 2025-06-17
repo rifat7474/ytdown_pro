@@ -1,21 +1,21 @@
-
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Download, Play, Clock, CheckCircle, AlertCircle } from 'lucide-react';
-import { VideoPreview } from '@/components/VideoPreview';
+import { Download, CheckCircle, AlertCircle } from 'lucide-react';
+import { VideoCard } from '@/components/VideoCard';
 import { DownloadOptions } from '@/components/DownloadOptions';
+import { Loader } from '@/components/Loader';
 import { toast } from '@/hooks/use-toast';
+import { api } from '@/utils/api';
 
 const Index = () => {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [videoData, setVideoData] = useState(null);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [downloadStatus, setDownloadStatus] = useState('idle'); // idle, processing, downloading, completed, error
+  const [downloadStatus, setDownloadStatus] = useState('idle');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!url.trim()) {
@@ -30,56 +30,52 @@ const Index = () => {
     setIsLoading(true);
     setDownloadStatus('processing');
     
-    // Simulate API call to extract video info
-    setTimeout(() => {
-      // Mock video data - in real app this would come from backend
-      const mockData = {
-        title: "Amazing TikTok Dance Tutorial 2024",
-        thumbnail: "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=400&h=300&fit=crop",
-        duration: "0:45",
-        platform: "TikTok",
-        author: "@dancequeen2024",
-        views: "2.3M views",
-        formats: [
-          { quality: "1080p", format: "MP4", size: "15.2 MB" },
-          { quality: "720p", format: "MP4", size: "8.7 MB" },
-          { quality: "480p", format: "MP4", size: "4.1 MB" },
-          { quality: "Audio Only", format: "MP3", size: "2.8 MB" }
-        ]
-      };
-      
-      setVideoData(mockData);
-      setIsLoading(false);
+    try {
+      const videoInfo = await api.getVideoInfo(url);
+      setVideoData(videoInfo);
       setDownloadStatus('idle');
-    }, 2000);
+      toast({
+        title: "Video Info Retrieved",
+        description: "Video information loaded successfully",
+      });
+    } catch (error) {
+      console.error('Error getting video info:', error);
+      setDownloadStatus('error');
+      toast({
+        title: "Error",
+        description: error.message || "Failed to get video information",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDownload = (format: any) => {
+  const handleDownload = async (format) => {
     setDownloadStatus('downloading');
-    setDownloadProgress(0);
     
-    // Simulate download progress
-    const interval = setInterval(() => {
-      setDownloadProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setDownloadStatus('completed');
-          toast({
-            title: "Download Complete!",
-            description: `Video downloaded in ${format.quality} quality`,
-          });
-          return 100;
-        }
-        return prev + Math.random() * 15;
+    try {
+      await api.downloadVideo(url, format.quality);
+      setDownloadStatus('completed');
+      toast({
+        title: "Download Complete!",
+        description: `Video downloaded in ${format.quality} quality`,
       });
-    }, 200);
+    } catch (error) {
+      console.error('Download error:', error);
+      setDownloadStatus('error');
+      toast({
+        title: "Download Failed",
+        description: error.message || "Failed to download video",
+        variant: "destructive"
+      });
+    }
   };
 
   const resetDownload = () => {
     setVideoData(null);
     setUrl('');
     setDownloadStatus('idle');
-    setDownloadProgress(0);
   };
 
   return (
@@ -157,50 +153,29 @@ const Index = () => {
           {/* Status Indicator */}
           {downloadStatus !== 'idle' && (
             <Card className="p-6 mb-8 bg-white/70 backdrop-blur-sm border-0 shadow-lg">
-              <div className="flex items-center justify-center gap-3">
-                {downloadStatus === 'processing' && (
-                  <>
-                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-blue-600 font-medium">Processing video...</span>
-                  </>
-                )}
-                {downloadStatus === 'downloading' && (
-                  <>
-                    <Clock className="w-5 h-5 text-orange-500" />
-                    <span className="text-orange-600 font-medium">Downloading... {Math.round(downloadProgress)}%</span>
-                  </>
-                )}
+              <div className="flex items-center justify-center">
+                {downloadStatus === 'processing' && <Loader message="Processing video..." />}
+                {downloadStatus === 'downloading' && <Loader message="Downloading..." />}
                 {downloadStatus === 'completed' && (
-                  <>
+                  <div className="flex items-center gap-3">
                     <CheckCircle className="w-5 h-5 text-green-500" />
                     <span className="text-green-600 font-medium">Download completed!</span>
-                  </>
+                  </div>
                 )}
                 {downloadStatus === 'error' && (
-                  <>
+                  <div className="flex items-center gap-3">
                     <AlertCircle className="w-5 h-5 text-red-500" />
-                    <span className="text-red-600 font-medium">Download failed. Please try again.</span>
-                  </>
+                    <span className="text-red-600 font-medium">An error occurred. Please try again.</span>
+                  </div>
                 )}
               </div>
-              
-              {downloadStatus === 'downloading' && (
-                <div className="mt-4">
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${downloadProgress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
             </Card>
           )}
 
           {/* Video Preview and Download Options */}
           {videoData && (
             <div className="grid lg:grid-cols-2 gap-8">
-              <VideoPreview data={videoData} />
+              <VideoCard data={videoData} />
               <DownloadOptions 
                 formats={videoData.formats} 
                 onDownload={handleDownload}
