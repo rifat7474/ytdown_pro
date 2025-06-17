@@ -122,7 +122,7 @@ const Index = () => {
                     <Input
                       id="url"
                       type="url"
-                      placeholder="https://www.tiktok.com/@username/video/..."
+                      placeholder="https://www.tiktok.com/@username/video/... or any social media URL"
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       className="h-14 text-lg border-2 border-gray-200 focus:border-blue-500 transition-all duration-300 rounded-2xl pl-6 pr-6 group-hover:shadow-lg bg-white/90 backdrop-blur-sm"
@@ -154,7 +154,7 @@ const Index = () => {
               <div className="text-center">
                 <p className="text-sm text-gray-600 mb-4 font-medium">Supported platforms:</p>
                 <div className="flex flex-wrap justify-center gap-3">
-                  {['TikTok', 'Instagram', 'YouTube', 'Twitter', 'Facebook', 'Snapchat'].map((platform) => (
+                  {['TikTok', 'Instagram', 'YouTube', 'Twitter', 'Facebook', 'Snapchat', 'LinkedIn', 'Reddit'].map((platform) => (
                     <span key={platform} className="px-4 py-2 bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700 rounded-full text-sm font-medium hover:from-blue-100 hover:to-purple-100 hover:text-blue-700 transition-all duration-200 cursor-default">
                       {platform}
                     </span>
