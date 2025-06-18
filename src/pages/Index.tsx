@@ -1,5 +1,5 @@
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { VideoCard } from '@/components/VideoCard';
 import { DownloadOptions } from '@/components/DownloadOptions';
@@ -10,14 +10,22 @@ import { FeaturesSection } from '@/components/FeaturesSection';
 import { Footer } from '@/components/Footer';
 import { toast } from '@/hooks/use-toast';
 import { api } from '@/utils/api';
+import { VideoInfo, VideoFormat, DownloadStatus } from '@/types';
 
 const Index = () => {
   const [url, setUrl] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [videoData, setVideoData] = useState(null);
-  const [downloadStatus, setDownloadStatus] = useState('idle');
+  const [videoData, setVideoData] = useState<VideoInfo | null>(null);
+  const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>('idle');
 
-  const handleSubmit = async (e) => {
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      api.cancelRequests();
+    };
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!url.trim()) {
@@ -43,9 +51,10 @@ const Index = () => {
     } catch (error) {
       console.error('Error getting video info:', error);
       setDownloadStatus('error');
+      const message = error instanceof Error ? error.message : "Failed to get video information";
       toast({
         title: "Error",
-        description: error.message || "Failed to get video information",
+        description: message,
         variant: "destructive"
       });
     } finally {
@@ -53,7 +62,16 @@ const Index = () => {
     }
   };
 
-  const handleDownload = async (format) => {
+  const handleDownload = async (format: VideoFormat) => {
+    if (!url.trim()) {
+      toast({
+        title: "Error",
+        description: "No URL available for download",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setDownloadStatus('downloading');
     
     try {
@@ -66,15 +84,17 @@ const Index = () => {
     } catch (error) {
       console.error('Download error:', error);
       setDownloadStatus('error');
+      const message = error instanceof Error ? error.message : "Failed to download video";
       toast({
         title: "Download Failed",
-        description: error.message || "Failed to download video",
+        description: message,
         variant: "destructive"
       });
     }
   };
 
   const resetDownload = () => {
+    api.cancelRequests();
     setVideoData(null);
     setUrl('');
     setDownloadStatus('idle');
@@ -83,7 +103,7 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 relative overflow-hidden">
       {/* Animated Background Elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-gradient-to-br from-blue-400/20 to-purple-600/20 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-gradient-to-br from-purple-400/20 to-pink-600/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
       </div>
@@ -91,7 +111,7 @@ const Index = () => {
       <div className="container mx-auto px-4 py-8 relative z-10">
         <HeroSection />
 
-        <div className="max-w-5xl mx-auto">
+        <main className="max-w-5xl mx-auto">
           <URLInputForm 
             url={url}
             setUrl={setUrl}
@@ -103,14 +123,14 @@ const Index = () => {
 
           {/* Video Preview and Download Options */}
           {videoData && (
-            <div className="grid lg:grid-cols-2 gap-8 mb-12">
+            <section className="grid lg:grid-cols-2 gap-8 mb-12" aria-label="Video preview and download options">
               <VideoCard data={videoData} />
               <DownloadOptions 
                 formats={videoData.formats} 
                 onDownload={handleDownload}
                 downloadStatus={downloadStatus}
               />
-            </div>
+            </section>
           )}
 
           {/* Reset Button */}
@@ -125,7 +145,7 @@ const Index = () => {
               </Button>
             </div>
           )}
-        </div>
+        </main>
 
         <FeaturesSection />
         <Footer />
