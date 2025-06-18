@@ -6,6 +6,12 @@ from models import VideoInfo, VideoFormat
 import re
 import tempfile
 import os
+import shutil
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class YTDownloader:
     def __init__(self):
@@ -13,18 +19,32 @@ class YTDownloader:
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
+            'socket_timeout': 30,
+            'retries': 3,
         }
+        
+        # Check if running on Render
+        self.is_render = os.getenv("RENDER", "false").lower() == "true"
+        if self.is_render:
+            logger.info("Running on Render deployment environment")
 
     async def get_video_info(self, url: str) -> VideoInfo:
         loop = asyncio.get_event_loop()
         
         def extract_info():
-            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                return info
+            try:
+                with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    return info
+            except Exception as e:
+                logger.error(f"Error extracting info: {str(e)}")
+                raise
         
         try:
-            info = await loop.run_in_executor(None, extract_info)
+            info = await asyncio.wait_for(
+                loop.run_in_executor(None, extract_info), 
+                timeout=60.0
+            )
             
             # Extract platform from URL
             platform = self._get_platform(url)
@@ -41,7 +61,7 @@ class YTDownloader:
                     reverse=True
                 )
                 
-                for fmt in sorted_formats:
+                for fmt in sorted_formats[:10]:  # Limit to top 10 formats
                     if fmt.get('height') and fmt.get('ext'):
                         quality = f"{fmt['height']}p"
                         if quality not in seen_qualities and fmt.get('vcodec') != 'none':
@@ -101,78 +121,92 @@ class YTDownloader:
                 formats=formats
             )
             
+        except asyncio.TimeoutError:
+            raise Exception("Request timeout - video info extraction took too long")
         except Exception as e:
+            logger.error(f"Failed to extract video info: {str(e)}")
             raise Exception(f"Failed to extract video info: {str(e)}")
 
     async def download_video(self, url: str, quality: str = "best"):
         loop = asyncio.get_event_loop()
+        temp_dir = None
         
         def download():
-            with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-                temp_path = temp_file.name
-            
-            # Configure download options based on quality
-            format_selector = self._get_format_selector(quality)
-            
-            opts = {
-                'format': format_selector,
-                'outtmpl': temp_path + '.%(ext)s',
-                'quiet': True,
-                'no_warnings': True,
-            }
-            
-            # Add specific options for audio downloads
-            if 'Audio' in quality:
-                opts.update({
-                    'format': 'bestaudio/best',
-                    'postprocessors': [{
-                        'key': 'FFmpegExtractAudio',
-                        'preferredcodec': 'mp3',
-                        'preferredquality': '192',
-                    }],
-                })
-            
+            nonlocal temp_dir
             try:
+                # Create a temporary directory for this download
+                temp_dir = tempfile.mkdtemp(prefix="yt_download_")
+                temp_file = os.path.join(temp_dir, "download")
+                
+                # Configure download options based on quality
+                format_selector = self._get_format_selector(quality)
+                
+                opts = {
+                    'format': format_selector,
+                    'outtmpl': temp_file + '.%(ext)s',
+                    'quiet': True,
+                    'no_warnings': True,
+                    'socket_timeout': 30,
+                    'retries': 2,
+                }
+                
+                # Add specific options for audio downloads
+                if 'Audio' in quality:
+                    opts.update({
+                        'format': 'bestaudio/best',
+                        'postprocessors': [{
+                            'key': 'FFmpegExtractAudio',
+                            'preferredcodec': 'mp3',
+                            'preferredquality': '192',
+                        }],
+                    })
+                
+                logger.info(f"Starting download with format: {format_selector}")
+                
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([url])
                 
                 # Find the downloaded file
                 downloaded_file = None
                 for ext in ['mp4', 'webm', 'mkv', 'mp3', 'm4a']:
-                    test_path = f"{temp_path}.{ext}"
+                    test_path = f"{temp_file}.{ext}"
                     if os.path.exists(test_path):
                         downloaded_file = test_path
                         break
                 
                 if not downloaded_file:
-                    raise Exception("Downloaded file not found")
+                    raise Exception("Downloaded file not found after processing")
                 
                 # Read file content
                 with open(downloaded_file, 'rb') as f:
                     content = f.read()
                 
-                # Clean up
-                try:
-                    os.unlink(downloaded_file)
-                    os.unlink(temp_path)
-                except:
-                    pass
-                
+                logger.info(f"Successfully downloaded {len(content)} bytes")
                 return content, self._get_file_extension(quality)
                 
             except Exception as e:
-                # Clean up on error
-                try:
-                    os.unlink(temp_path)
-                except:
-                    pass
+                logger.error(f"Download error: {str(e)}")
                 raise e
+            finally:
+                # Clean up temporary directory
+                if temp_dir and os.path.exists(temp_dir):
+                    try:
+                        shutil.rmtree(temp_dir)
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to cleanup temp dir: {cleanup_error}")
         
         try:
-            content, extension = await loop.run_in_executor(None, download)
+            content, extension = await asyncio.wait_for(
+                loop.run_in_executor(None, download), 
+                timeout=300.0  # 5 minute timeout
+            )
             return content, extension
+        except asyncio.TimeoutError:
+            raise Exception("Download timeout - the video took too long to process")
         except Exception as e:
             raise Exception(f"Failed to download video: {str(e)}")
+
+    # ... keep existing code (helper methods _get_platform, _format_duration, _format_views, _format_filesize, _get_format_selector, _get_file_extension)
 
     def _get_platform(self, url: str) -> str:
         if 'tiktok.com' in url:

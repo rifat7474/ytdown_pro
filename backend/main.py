@@ -6,6 +6,7 @@ from models import VideoRequest, VideoInfo
 from yt_downloader import YTDownloader
 import uvicorn
 import io
+import os
 
 app = FastAPI(title="Social Media Downloader API", version="1.0.0")
 
@@ -23,6 +24,27 @@ downloader = YTDownloader()
 @app.get("/")
 async def root():
     return {"message": "Social Media Downloader API - Supporting TikTok, Instagram, YouTube, Twitter and more!"}
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for deployment monitoring"""
+    try:
+        # Check if FFmpeg is available
+        import subprocess
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        ffmpeg_available = result.returncode == 0
+        
+        return {
+            "status": "healthy",
+            "ffmpeg_available": ffmpeg_available,
+            "environment": "render" if os.getenv("RENDER") else "local"
+        }
+    except Exception as e:
+        return {
+            "status": "degraded",
+            "error": str(e),
+            "ffmpeg_available": False
+        }
 
 @app.post("/api/video-info", response_model=VideoInfo)
 async def get_video_info(request: VideoRequest):
@@ -42,9 +64,6 @@ async def download_video(request: VideoRequest):
         if "Audio" in request.quality:
             filename = f"audio.{extension}"
         
-        # Create streaming response
-        file_stream = io.BytesIO(content)
-        
         return StreamingResponse(
             io.BytesIO(content),
             media_type="application/octet-stream",
@@ -57,4 +76,6 @@ async def download_video(request: VideoRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    workers = int(os.getenv("MAX_WORKERS", 1))
+    uvicorn.run(app, host="0.0.0.0", port=port, workers=workers)
