@@ -17,4 +17,6 @@ services:
         value: true
       - key: MAX_WORKERS
         value: 1
+      - key: CORS_ORIGINS
+        value: "https://*.vercel.app,https://*.lovable.app"
     healthCheckPath: /health

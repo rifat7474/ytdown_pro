@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -32,13 +31,16 @@ allowed_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
     "https://*.lovable.app",
-    "https://*.render.com"
+    "https://*.render.com",
+    "https://*.vercel.app",
+    "https://vercel.app"
 ]
 
 if os.getenv("RENDER"):
     # Add production domains
     allowed_origins.extend([
         "https://social-media-downloader.lovable.app",
+        "https://social-media-downloader.vercel.app",
         # Add your custom domain here when deployed
     ])
 
@@ -53,7 +55,7 @@ app.add_middleware(
 # Add trusted host middleware for security
 app.add_middleware(
     TrustedHostMiddleware,
-    allowed_hosts=["localhost", "127.0.0.1", "*.render.com", "*.lovable.app"]
+    allowed_hosts=["localhost", "127.0.0.1", "*.render.com", "*.lovable.app", "*.vercel.app"]
 )
 
 downloader = YTDownloader()
