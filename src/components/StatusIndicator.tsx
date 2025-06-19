@@ -1,13 +1,15 @@
 
 import { Card } from '@/components/ui/card';
-import { CheckCircle, AlertCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { Loader } from '@/components/Loader';
 
 interface StatusIndicatorProps {
   downloadStatus: string;
+  onRetry?: () => void;
 }
 
-export const StatusIndicator = ({ downloadStatus }: StatusIndicatorProps) => {
+export const StatusIndicator = ({ downloadStatus, onRetry }: StatusIndicatorProps) => {
   if (downloadStatus === 'idle') return null;
 
   return (
@@ -24,11 +26,23 @@ export const StatusIndicator = ({ downloadStatus }: StatusIndicatorProps) => {
           </div>
         )}
         {downloadStatus === 'error' && (
-          <div className="flex items-center gap-4 text-red-600">
-            <div className="p-3 bg-red-100 rounded-full">
-              <AlertCircle className="w-6 h-6" />
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex items-center gap-4 text-red-600">
+              <div className="p-3 bg-red-100 rounded-full">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <span className="text-lg font-semibold">Something went wrong. Please try again.</span>
             </div>
-            <span className="text-lg font-semibold">Something went wrong. Please try again.</span>
+            {onRetry && (
+              <Button
+                onClick={onRetry}
+                variant="outline"
+                className="flex items-center gap-2 mt-2 hover:bg-blue-50 border-blue-200"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Retry
+              </Button>
+            )}
           </div>
         )}
       </div>

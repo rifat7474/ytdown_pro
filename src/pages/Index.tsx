@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { VideoCard } from '@/components/VideoCard';
 import { DownloadOptions } from '@/components/DownloadOptions';
@@ -10,6 +10,9 @@ import { FeaturesSection } from '@/components/FeaturesSection';
 import { Footer } from '@/components/Footer';
 import { toast } from '@/hooks/use-toast';
 import { api } from '@/utils/api';
+import { logError, handleApiError } from '@/utils/errorHandler';
+import { validateUrl } from '@/utils/validation';
+import { performanceMonitor } from '@/utils/performance';
 import { VideoInfo, VideoFormat, DownloadStatus } from '@/types';
 
 const Index = () => {
@@ -17,21 +20,40 @@ const Index = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [videoData, setVideoData] = useState<VideoInfo | null>(null);
   const [downloadStatus, setDownloadStatus] = useState<DownloadStatus>('idle');
+  const [retryCount, setRetryCount] = useState(0);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       api.cancelRequests();
+      performanceMonitor.logMemoryUsage();
     };
   }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Reset retry count when URL changes
+  useEffect(() => {
+    setRetryCount(0);
+  }, [url]);
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!url.trim()) {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
       toast({
         title: "URL Required",
         description: "Please enter a valid social media URL",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate URL before making API call
+    const validation = validateUrl(trimmedUrl);
+    if (!validation.isValid) {
+      toast({
+        title: "Invalid URL",
+        description: validation.error,
         variant: "destructive"
       });
       return;
@@ -41,29 +63,36 @@ const Index = () => {
     setDownloadStatus('processing');
     
     try {
-      const videoInfo = await api.getVideoInfo(url);
+      performanceMonitor.startTimer('video-info-fetch');
+      const videoInfo = await api.getVideoInfo(trimmedUrl);
+      performanceMonitor.endTimer('video-info-fetch');
+      
       setVideoData(videoInfo);
       setDownloadStatus('idle');
+      setRetryCount(0);
+      
       toast({
-        title: "Video Info Retrieved",
-        description: "Video information loaded successfully",
+        title: "Success!",
+        description: `Video information loaded for ${validation.platform}`,
       });
     } catch (error) {
-      console.error('Error getting video info:', error);
+      const errorMessage = handleApiError(error);
+      logError('handleSubmit', error, { url: trimmedUrl, retryCount });
+      
       setDownloadStatus('error');
-      const message = error instanceof Error ? error.message : "Failed to get video information";
       toast({
         title: "Error",
-        description: message,
+        description: errorMessage,
         variant: "destructive"
       });
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [url, retryCount]);
 
-  const handleDownload = async (format: VideoFormat) => {
-    if (!url.trim()) {
+  const handleDownload = useCallback(async (format: VideoFormat) => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
       toast({
         title: "Error",
         description: "No URL available for download",
@@ -75,30 +104,57 @@ const Index = () => {
     setDownloadStatus('downloading');
     
     try {
-      await api.downloadVideo(url, format.quality);
+      performanceMonitor.startTimer('video-download');
+      await api.downloadVideo(trimmedUrl, format.quality);
+      performanceMonitor.endTimer('video-download');
+      
       setDownloadStatus('completed');
       toast({
         title: "Download Complete!",
-        description: `Video downloaded in ${format.quality} quality`,
+        description: `Video downloaded successfully in ${format.quality} quality`,
       });
     } catch (error) {
-      console.error('Download error:', error);
+      const errorMessage = handleApiError(error);
+      logError('handleDownload', error, { 
+        url: trimmedUrl, 
+        quality: format.quality,
+        format: format.format 
+      });
+      
       setDownloadStatus('error');
-      const message = error instanceof Error ? error.message : "Failed to download video";
       toast({
         title: "Download Failed",
-        description: message,
+        description: errorMessage,
         variant: "destructive"
       });
     }
-  };
+  }, [url]);
 
-  const resetDownload = () => {
+  const handleRetry = useCallback(() => {
+    if (retryCount < 3) {
+      setRetryCount(prev => prev + 1);
+      handleSubmit({ preventDefault: () => {} } as React.FormEvent);
+    } else {
+      toast({
+        title: "Too Many Retries",
+        description: "Please check the URL and try again later",
+        variant: "destructive"
+      });
+    }
+  }, [retryCount, handleSubmit]);
+
+  const resetDownload = useCallback(() => {
     api.cancelRequests();
     setVideoData(null);
     setUrl('');
     setDownloadStatus('idle');
-  };
+    setRetryCount(0);
+    
+    // Clear cache periodically
+    if (Math.random() < 0.1) { // 10% chance
+      api.clearCache();
+    }
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 relative overflow-hidden">
@@ -119,7 +175,10 @@ const Index = () => {
             isLoading={isLoading}
           />
 
-          <StatusIndicator downloadStatus={downloadStatus} />
+          <StatusIndicator 
+            downloadStatus={downloadStatus} 
+            onRetry={downloadStatus === 'error' && retryCount < 3 ? handleRetry : undefined}
+          />
 
           {/* Video Preview and Download Options */}
           {videoData && (
